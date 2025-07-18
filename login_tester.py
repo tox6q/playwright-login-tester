@@ -8,7 +8,7 @@ import sys
 import asyncio
 from playwright.async_api import async_playwright
 
-async def test_login(username, password, url=None):
+async def test_login(username, password, url=None, site_script=None):
     """Test login functionality on a website"""
     
     # Default to the practice test site if no URL provided
@@ -193,36 +193,73 @@ async def test_login(username, password, url=None):
                         print(f"❌ Still on login page - found: '{failure}'")
                         break
             
-            # Keep browser open for a few seconds to see the result
-            print("\n⏳ Keeping browser open for 5 seconds...")
-            await asyncio.sleep(5)
+            # Check if we need to run a site-specific script
+            if site_script and login_successful:
+                print(f"\n🚀 Login successful! Running site-specific script: {site_script}")
+                try:
+                    # Import and run the site script
+                    import importlib.util
+                    import sys
+                    
+                    spec = importlib.util.spec_from_file_location("site_scraper", site_script)
+                    site_module = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(site_module)
+                    
+                    # Run the site scraper with authenticated page and browser
+                    if hasattr(site_module, 'run_scraper'):
+                        await site_module.run_scraper(page, browser)
+                    else:
+                        print("❌ Site script must have a 'run_scraper(page, browser)' function")
+                        
+                except Exception as e:
+                    print(f"❌ Error running site script: {str(e)}")
+            else:
+                # Keep browser open for a few seconds to see the result (normal mode)
+                print("\n⏳ Keeping browser open for 5 seconds...")
+                await asyncio.sleep(5)
             
         except Exception as e:
             print(f"❌ Error during login test: {str(e)}")
             
         finally:
-            await browser.close()
+            if not site_script or not login_successful:
+                await browser.close()
+            # Note: If site_script is running, it's responsible for closing the browser
             
     return login_successful
 
 def main():
     """Main function to handle command line arguments"""
     if len(sys.argv) < 3:
-        print("Usage: python login_tester.py <username> <password> [url]")
-        print("\nExample:")
+        print("Usage: python login_tester.py <username> <password> [url] [site_script.py]")
+        print("\nExamples:")
         print("  python login_tester.py student Password123")
         print("  python login_tester.py myuser mypass https://example.com/login")
+        print("  python login_tester.py admin pass123 http://localhost:3000 localhost3000_scraper.py")
         sys.exit(1)
     
     username = sys.argv[1]
     password = sys.argv[2]
     url = sys.argv[3] if len(sys.argv) > 3 else None
+    site_script = None
+    
+    # Check if 4th argument is a site script
+    if len(sys.argv) > 4 and sys.argv[4].endswith('.py'):
+        site_script = sys.argv[4]
+        print(f"🎯 Site script detected: {site_script}")
+    elif len(sys.argv) > 4:
+        # If 4th argument doesn't end with .py, treat 3rd as URL and 4th as script
+        url = sys.argv[3] if not sys.argv[3].endswith('.py') else None
+        site_script = sys.argv[4] if sys.argv[4].endswith('.py') else None
     
     # Run the async login test
-    success = asyncio.run(test_login(username, password, url))
+    success = asyncio.run(test_login(username, password, url, site_script))
     
     if success:
-        print("\n🎉 LOGIN TEST COMPLETED SUCCESSFULLY!")
+        if site_script:
+            print("\n🎉 LOGIN AND SITE SCRIPT COMPLETED!")
+        else:
+            print("\n🎉 LOGIN TEST COMPLETED SUCCESSFULLY!")
     else:
         print("\n💥 LOGIN TEST FAILED OR UNCLEAR")
 
