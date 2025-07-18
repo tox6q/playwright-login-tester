@@ -32,7 +32,7 @@ async def test_login(username, password, url=None):
             
             # Find and fill username field
             print("🔍 Looking for username field...")
-            username_field = page.locator('input[name="username"], input[id="username"], input[type="text"]').first
+            username_field = page.locator('input[name="username"], input[id="username"], input[name="email"], input[id="email"], input[type="email"], input[type="text"]').first
             await username_field.fill(username)
             print(f"✅ Username entered: {username}")
             
@@ -94,6 +94,57 @@ async def test_login(username, password, url=None):
             
             print(f"\n📍 Initial URL: {initial_url}")
             print(f"📍 Current URL: {current_url}")
+            
+            # Check for 2FA first (before success/failure detection)
+            print("🔍 Checking for 2FA/MFA requirements...")
+            twofa_indicators = [
+                '2fa', 'two-factor', 'two factor', 'mfa', 'multi-factor',
+                'authentication', 'authenticator', 'verification', 'verify',
+                'enter code', 'security code', 'verification code', 'auth code',
+                'sms code', 'phone code', 'backup code', 'recovery code',
+                'google authenticator', 'microsoft authenticator'
+            ]
+            
+            twofa_detected = False
+            for indicator in twofa_indicators:
+                if indicator.lower() in page_content.lower():
+                    twofa_detected = True
+                    print(f"🔐 2FA DETECTED! Found indicator: '{indicator}'")
+                    break
+            
+            if twofa_detected:
+                # Handle 2FA flow
+                print("\n🔐 Two-Factor Authentication Required!")
+                print("📱 Please check your phone/authenticator app for the code")
+                
+                # Prompt user for 2FA code
+                twofa_code = input("\n🔢 Enter your 2FA code: ").strip()
+                
+                if twofa_code:
+                    print(f"✅ 2FA code entered: {twofa_code}")
+                    
+                    # Find 2FA input field
+                    print("🔍 Looking for 2FA code input field...")
+                    twofa_field = page.locator('input[name*="code"], input[id*="code"], input[type="text"], input[type="number"], input[placeholder*="code"], input[placeholder*="Code"]').first
+                    await twofa_field.fill(twofa_code)
+                    print("✅ 2FA code filled")
+                    
+                    # Find and click verify/continue button
+                    print("🔍 Looking for verify/continue button...")
+                    verify_button = page.locator('button:has-text("Verify"), button:has-text("Continue"), button:has-text("Confirm"), button:has-text("Submit"), button[type="submit"]').first
+                    await verify_button.click()
+                    print("✅ Verify button clicked")
+                    
+                    # Wait for 2FA verification
+                    await page.wait_for_load_state('networkidle')
+                    await asyncio.sleep(3)
+                    
+                    # Update current state after 2FA
+                    current_url = page.url
+                    page_content = await page.content()
+                    print(f"📍 URL after 2FA: {current_url}")
+                else:
+                    print("❌ No 2FA code provided - continuing with regular detection")
             
             login_successful = False
             
